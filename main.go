@@ -1,39 +1,78 @@
 package main
 
 import (
-	"GoNet/tasks"
 	"fmt"
+	"net"
 	"os"
+	"os/exec"
+	"strings"
+
+	"github.com/go-ping/ping"
 )
 
-func main() {
-	if len(os.Args) < 3 || os.Args[1] != "check" {
-		fmt.Println("Usage: go run main.go check <hostname>")
+//logic to check if the given target is IP or hostname
+
+func isIP(target string) bool {
+	return net.ParseIP(target) != nil
+}
+
+// logic to ressolve the hostname
+func dnsLookup(address string) ([]string, error) {
+	return net.LookupHost(address)
+}
+
+// logic for the ping
+func doPing(target string) {
+	fmt.Println("Pinging : ", target)
+	pinger, err := ping.NewPinger(target)
+	if err != nil {
+		fmt.Println("ping error: ", err)
 		return
 	}
+	pinger.Count = 4
+	pinger.Run()
+	stats := pinger.Statistics()
+	fmt.Printf("Results: %+v\n", stats)
 
-	host := os.Args[2]
-	fmt.Println("Running checks for:", host)
+}
 
-	dnsCh := make(chan string)
-	pingCh := make(chan string)
-	traceCh := make(chan string)
-	mtrCh := make(chan string)
+// logic for the traceroute
+func doTrace(target string) {
+	fmt.Println("Traceroute to : ", target)
+	var cmd *exec.Cmd
+	cmd = exec.Command("traceroute", target)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Println("traceroute Failed: ", err)
+		return
+	}
+	fmt.Println(string(output))
+}
 
-	go tasks.PerformDNSLookup(host, dnsCh)
-	go tasks.RunPing(host, pingCh)
-	go tasks.RunTraceroute(host, traceCh)
-	go tasks.RunMTR(host, mtrCh)
+func main() {
 
-	fmt.Println("\n--- DNS Lookup ---")
-	fmt.Print(<-dnsCh)
+	if len(os.Args) < 2 {
+		fmt.Println("usage: go run main <target> 'ip or hostname'")
+		return
+	}
+	input := strings.TrimSpace(os.Args[1])
+	target := input
 
-	fmt.Println("\n--- Ping ---")
-	fmt.Print(<-pingCh)
+	if !isIP(target) {
+		fmt.Println("detected Hostname, Resolving name...\n")
+		ips, err := dnsLookup(target)
+		if err != nil {
+			fmt.Println("DNS lookup failed")
+			return
+		}
+		fmt.Println("Found IPs", ips)
+		target = ips[0]
 
-	fmt.Println("\n--- Traceroute ---")
-	fmt.Print(<-traceCh)
+	} else {
+		fmt.Println("detected IP address")
 
-	fmt.Println("\n--- MTR ---")
-	fmt.Print(<-mtrCh)
+	}
+	doPing(target)
+	doTrace(target)
+
 }
